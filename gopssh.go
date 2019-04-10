@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// Read config file with list of hostnames of remote hosts
 func readConfig(filename string) (data []string) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -29,6 +30,7 @@ func readConfig(filename string) (data []string) {
 	return data
 }
 
+// Execute command at remote host
 func executeCmd(command, remote_host string, username string, password string) string {
 	config := sshConfig(username, password)
 	client, err := ssh.Dial("tcp", remote_host+":22", config)
@@ -51,6 +53,7 @@ func executeCmd(command, remote_host string, username string, password string) s
 	return b.String()
 }
 
+// Pass username and password for authenticate by ssh at remote host
 func sshConfig(username string, password string) *ssh.ClientConfig {
 	config := &ssh.ClientConfig{
 		User: username,
