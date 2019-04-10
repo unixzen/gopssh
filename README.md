@@ -1,2 +1,2 @@
 # gopssh
-Utility for execute command at remote server by ssh
+Utility for execute command at remote servers by ssh
