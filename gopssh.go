@@ -8,7 +8,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	"log"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -48,7 +47,7 @@ func executeCmd(command, remote_host string, username string, password string) s
 	if err := session.Run(command); err != nil {
 		log.Fatal("Failed to run: " + err.Error())
 	}
-	fmt.Println(remote_host)
+	fmt.Println("\x1b[31;1m" + remote_host + "\x1b[0m")
 	return b.String()
 }
 
@@ -73,10 +72,12 @@ func main() {
 	results := make(chan string)
 	timeout := time.After(10 * time.Second)
 	hosts := readConfig("./hosts")
+
 	for _, hostname := range hosts {
 		go func(hostname string) {
 			results <- executeCmd(*command, hostname, *username, *password)
 		}(hostname)
+
 	}
 
 	for i := 0; i < len(hosts); i++ {
@@ -88,5 +89,6 @@ func main() {
 			return
 		}
 	}
+	close(results)
 
 }
