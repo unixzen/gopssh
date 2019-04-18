@@ -1,39 +1,64 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
+	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh"
+	"io/ioutil"
 	"log"
-	"os"
 	"time"
 )
 
-// Read config file with list of hostnames of remote hosts
-func readConfig(filename string) (data []string) {
-	file, err := os.Open(filename)
+type Config struct {
+	SshKeyPath  string   `mapstructure:"ssh_key_path"`
+	SshUser     string   `mapstructure:"ssh_user"`
+	SshPassword string   `mapstructure:"ssh_password"`
+	Command     string   `mapstructure:"command"`
+	Passphrase  string   `mapstructure:"passphrase"`
+	SshPort     string   `mapstructure:"ssh_port"`
+	Method      string   `mapstructure:"method"`
+	Hosts       []string `mapstructure:"hosts"`
+}
+
+var Conf Config
+
+// Read config file
+func readConfig(filename string) {
+	viper.SetConfigName(filename)
+	viper.AddConfigPath(".")
+	viper.SetConfigType("yaml")
+	err := viper.ReadInConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		data = append(data, scanner.Text())
+	if err := viper.Unmarshal(&Conf); err != nil {
+		log.Fatal("Unable to decode into struct, %v", err)
 	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-	return data
 }
 
 // Execute command at remote host
-func executeCmd(command, remote_host string, username string, password string) string {
-	config := sshConfig(username, password)
-	client, err := ssh.Dial("tcp", remote_host+":22", config)
+func executeCmd(remote_host string) string {
+	readConfig("config")
+	//	config, err := sshAuthKey(Conf.SshUser, Conf.SshKeyPath, Conf.Passphrase)
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	var config *ssh.ClientConfig
+
+	if Conf.Method == "password" {
+		config = sshAuthPassword(Conf.SshUser, Conf.SshPassword)
+	} else if Conf.Method == "key" {
+		config = sshAuthKey(Conf.SshUser, Conf.SshKeyPath, Conf.Passphrase)
+		//		if err != nil {
+		//			log.Fatal(err)
+		//		}
+	} else {
+		log.Fatal(`Please set method "password" or "key" at configuration file`)
+	}
+
+	client, err := ssh.Dial("tcp", remote_host+":"+Conf.SshPort, config)
 	if err != nil {
 		log.Fatal("Failed to dial: ", err)
 	}
@@ -46,7 +71,7 @@ func executeCmd(command, remote_host string, username string, password string) s
 
 	var b bytes.Buffer
 	session.Stdout = &b
-	if err := session.Run(command); err != nil {
+	if err := session.Run(Conf.Command); err != nil {
 		log.Fatal("Failed to run: " + err.Error())
 	}
 	fmt.Println("\x1b[31;1m" + remote_host + "\x1b[0m")
@@ -54,7 +79,7 @@ func executeCmd(command, remote_host string, username string, password string) s
 }
 
 // Pass username and password for authenticate by ssh at remote host
-func sshConfig(username string, password string) *ssh.ClientConfig {
+func sshAuthPassword(username string, password string) *ssh.ClientConfig {
 	config := &ssh.ClientConfig{
 		User: username,
 		Auth: []ssh.AuthMethod{
@@ -66,24 +91,42 @@ func sshConfig(username string, password string) *ssh.ClientConfig {
 	return config
 }
 
-func main() {
+// Pass username, path of private ssh key and passphrase for authenticate by ssh at remote host
+func sshAuthKey(username string, ssh_key_path string, passphrase string) *ssh.ClientConfig {
+	privateKey, err := ioutil.ReadFile(ssh_key_path)
+	if err != nil {
+		return &ssh.ClientConfig{}
+	}
 
-	username := flag.String("username", "", "Username for connection to host")
-	password := flag.String("password", "", "Password for connection to host")
-	command := flag.String("command", "", "Command which will be execute")
-	flag.Parse()
+	signer, err := ssh.ParsePrivateKeyWithPassphrase(privateKey, []byte(passphrase))
+	if err != nil {
+		return &ssh.ClientConfig{}
+	}
+
+	config := &ssh.ClientConfig{
+		User: username,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	return config
+}
+
+func main() {
+	readConfig("config")
 	results := make(chan string)
 	timeout := time.After(10 * time.Second)
-	hosts := readConfig("./hosts")
 
-	for _, hostname := range hosts {
+	for _, hostname := range Conf.Hosts {
 		go func(hostname string) {
-			results <- executeCmd(*command, hostname, *username, *password)
+			results <- executeCmd(hostname)
 		}(hostname)
 
 	}
 
-	for i := 0; i < len(hosts); i++ {
+	for i := 0; i < len(Conf.Hosts); i++ {
 		select {
 		case res := <-results:
 			fmt.Print(res)

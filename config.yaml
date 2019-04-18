@@ -1,0 +1,17 @@
+---
+
+ssh_key_path: "/home/edemin/.ssh/id_rsa"
+ssh_user: "root"
+ssh_password: "testpassword"
+ssh_port: "22"
+method: "key"
+command: "uptime"
+passphrase: "testphrase"
+hosts: 
+  - host1
+  - host2
+  - host3
+
+
+
+
